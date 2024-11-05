@@ -1,4 +1,4 @@
-package com.huyenhm.group;
+package com.huyenhm.org;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -6,11 +6,11 @@ import org.springframework.stereotype.Service;
 import com.huyenhm.exception.ResourceNotFoundException;
 
 @Service
-public class GroupServ {
+public class OrgServ {
 	@Autowired
-	private GroupRepo groupRepo;
+	private OrgRepo groupRepo;
 
-	public Group getGroupById(Long id) {
+	public Org getGroupById(Long id) {
 		return groupRepo.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Group not found with ID: " + id));
 	}

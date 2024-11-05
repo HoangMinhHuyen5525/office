@@ -1,6 +1,8 @@
 package com.huyenhm.device;
 
 import java.util.List;
+import java.util.Optional;
+
 import org.json.simple.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -12,8 +14,7 @@ import com.huyenhm.common.JsonConverter;
 import com.huyenhm.common.UtilFunction;
 import com.huyenhm.data.CallApi;
 import com.huyenhm.data.NetworkMonitor;
-import com.huyenhm.exception.DuplicateException;
-import com.huyenhm.exception.RequiredException;
+import com.huyenhm.exception.InvalidInputException;
 import com.huyenhm.exception.ResourceNotFoundException;
 import com.huyenhm.exception.UnauthorizedException;
 
@@ -31,7 +32,8 @@ public class DeviceServ {
 		return devices;
 	}
 
-	public Device getDeviceById(Long id) {
+	public Device getDeviceById(String input) {
+		long id = Long.parseLong(UtilFunction.validateInput(input, "ID", "long", true));
 		return deviceRepo.findById(id).map(device -> {
 			String status = NetworkMonitor.pingDevice(device.getIp());
 			device.setStatus(status);
@@ -40,110 +42,92 @@ public class DeviceServ {
 		}).orElseThrow(() -> new ResourceNotFoundException("Device not found with ID: " + id));
 	}
 
-	public Device updateDevice(Long id, String name) {
+	public Device updateDevice(String input, DeviceDTO deviceDTO) {
+		long id = Long.parseLong(UtilFunction.validateInput(input, "ID", "long", true));
 		Device device = deviceRepo.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Device not found with ID: " + id));
-		device.setName(name);
+		try {
+			String name = UtilFunction.validateInput(deviceDTO.getName(), "Name", "string", true);
+			String ip = UtilFunction.validateInput(deviceDTO.getIp(), "IP", "ip", true);
+			String port = UtilFunction.validateInput(deviceDTO.getPort(), "Port", "port", true);
+			String username = UtilFunction.validateInput(deviceDTO.getUsername(), "Username", "string", true);
+			String password = UtilFunction.validateInput(deviceDTO.getPassword(), "Password", "string", true);
+
+			device.setName(name);
+			device.setIp(ip);
+			device.setPort(port);
+			device.setUsername(username);
+			device.setPassword(password);
+		} catch (Exception e) {
+			throw new InvalidInputException("Invalid input format: " + e.getMessage());
+		}
+
 		return deviceRepo.save(device);
 	}
 
-	public void deleteDevice(Long id) {
-		Device device = deviceRepo.findById(id)
-				.orElseThrow(() -> new ResourceNotFoundException("Device not found with ID: " + id));
-		deviceRepo.delete(device);
-	}
+	public Boolean deleteDevice(String input) {
+		long id = Long.parseLong(UtilFunction.validateInput(input, "ID", "long", true));
 
-	public List<Device> searchDevices(Device device) {
-		ExampleMatcher matcher = ExampleMatcher.matching().withIgnoreNullValues()
-				.withStringMatcher(ExampleMatcher.StringMatcher.CONTAINING).withIgnoreCase();
-
-		Example<Device> example = Example.of(device, matcher);
-		return deviceRepo.findAll(example);
-	}
-
-	public List<Device> searchByIpOrName(String ip, String name) {
-		if (ip != null && !ip.isEmpty()) {
-			Device deviceByIp = new Device();
-			deviceByIp.setIp(ip);
-			return deviceRepo.findAll(Example.of(deviceByIp));
-		} else if (name != null && !name.isEmpty()) {
-			Device deviceByName = new Device();
-			deviceByName.setName(name);
-			return deviceRepo.findAll(Example.of(deviceByName));
+		Optional<Device> device = deviceRepo.findById(id);
+		if (device.isPresent()) {
+			if (device.get().getPerson() != null) {
+				throw new InvalidInputException("Device cannot be delete, its assoliated to person");
+			}
+			deviceRepo.deleteById(id);
+		} else {
+			throw new ResourceNotFoundException("Device not found with ID: " + id);
 		}
-		return List.of();
+		return true;
 	}
 
-	public Device findByIp(String ip) {
-		return deviceRepo.findByIp(ip);
-	}
-
-	public List<Object> findAllIP() {
-		return deviceRepo.findAllIP();
+	public List<Device> searchDevices(String key) {
+		List<Device> devices = deviceRepo.searchByKey(key);
+		if (devices == null) {
+			throw new ResourceNotFoundException("No device found with key: " + key);
+		}
+		return devices;
 	}
 
 	public Device addDevice(DeviceDTO deviceDTO) {
-		if (!UtilFunction.isNullOrEmpty(deviceDTO.getName()) && !UtilFunction.isNullOrEmpty(deviceDTO.getIp())
-				&& !UtilFunction.isNullOrEmpty(deviceDTO.getPort())
-				&& !UtilFunction.isNullOrEmpty(deviceDTO.getUsername())
-				&& !UtilFunction.isNullOrEmpty(deviceDTO.getPassword())) {
-			if (deviceRepo.checkByIp(deviceDTO.getIp()) == null) {
-				return saveDevice(deviceDTO);
-			} else {
-				throw new DuplicateException("This ip " + deviceDTO.getIp() + " have existed");
-			}
-		} else {
-			if (UtilFunction.isNullOrEmpty(deviceDTO.getIp())) {
-				throw new RequiredException("Fill ip");
-			} else if (UtilFunction.isNullOrEmpty(deviceDTO.getName())) {
-				throw new RequiredException("Fill name");
-			} else if (UtilFunction.isNullOrEmpty(deviceDTO.getPort())) {
-				throw new RequiredException("Fill port");
-			} else if (UtilFunction.isNullOrEmpty(deviceDTO.getUsername())) {
-				throw new RequiredException("Fill username");
-			} else if (UtilFunction.isNullOrEmpty(deviceDTO.getPassword())) {
-				throw new RequiredException("Fill password");
-			} else {
-				throw new RequiredException("Fill form");
-			}
-		}
-	}
-
-	public Device saveDevice(DeviceDTO deviceDTO) {
-
-		String ip = deviceDTO.getIp();
-		String port = deviceDTO.getPort();
-		String username = deviceDTO.getUsername();
-		String password = deviceDTO.getPassword();
-		String method = "GET";
-
-		List<String> responseList = null;
+		Device newDevice = new Device();
 		try {
-			responseList = CallApi.callApi(ip, port, Consts.GET_DEVICE, method, username, password, null);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		String responseBean = responseList.get(1);
-		if (responseList.get(0).equals("200")) {
-			Device device = new Device();
-			JSONObject response = JsonConverter.XMLConverted(responseBean);
-			device.setName(deviceDTO.getName());
-			device.setIp(deviceDTO.getIp());
-			device.setPort(deviceDTO.getPort());
-			device.setUsername(deviceDTO.getUsername());
-			device.setPassword(deviceDTO.getPassword());
-			device.setStatus(NetworkMonitor.pingDevice(deviceDTO.getIp()));
-			device.setDeviceID(Long.parseLong(response.get("deviceID").toString()));
-			device.setDeviceName((response.get("deviceName").toString()));
-			device.setEncoderVersion(response.get("encoderVersion").toString());
-			device.setFirmwareVersion(response.get("firmwareVersion").toString());
-			device.setMacAddress(response.get("macAddress").toString());
-			device.setModel(response.get("model").toString());
-			device.setSerialNumber(response.get("serialNumber").toString());
+			String name = UtilFunction.validateInput(deviceDTO.getName(), "Name", "string", true);
+			String ip = UtilFunction.validateInput(deviceDTO.getIp(), "IP", "ip", true);
+			String port = UtilFunction.validateInput(deviceDTO.getPort(), "Port", "port", true);
+			String username = UtilFunction.validateInput(deviceDTO.getUsername(), "Username", "string", true);
+			String password = UtilFunction.validateInput(deviceDTO.getPassword(), "Password", "string", true);
 
-			return deviceRepo.save(device);
-		} else {
-			throw new UnauthorizedException(responseBean);
+			Optional<Device> existDevice = deviceRepo.findByIp(ip);
+			if (existDevice.isPresent()) {
+				throw new InvalidInputException("Device have existed with ip: " + ip);
+			}
+
+			String method = "GET";
+			List<String> responseBean = CallApi.callApi(ip, port, Consts.GET_DEVICE, method, username, password, null);
+			if (responseBean.get(0).equals("200")) {
+				Device device = new Device();
+				JSONObject response = JsonConverter.XMLConverted(responseBean.get(1));
+				device.setName(name);
+				device.setIp(ip);
+				device.setPort(port);
+				device.setUsername(username);
+				device.setPassword(password);
+				device.setStatus(NetworkMonitor.pingDevice(ip));
+				device.setDeviceID(Long.parseLong(response.get("deviceID").toString()));
+				device.setDeviceName((response.get("deviceName").toString()));
+				device.setEncoderVersion(response.get("encoderVersion").toString());
+				device.setFirmwareVersion(response.get("firmwareVersion").toString());
+				device.setMacAddress(response.get("macAddress").toString());
+				device.setModel(response.get("model").toString());
+				device.setSerialNumber(response.get("serialNumber").toString());
+
+				newDevice = deviceRepo.save(device);
+			} else {
+				throw new UnauthorizedException("Unauthorized");
+			}
+		} catch (Exception e) {
+			throw new InvalidInputException("Invalid input format: " + e.getMessage());
 		}
+		return newDevice;
 	}
 }

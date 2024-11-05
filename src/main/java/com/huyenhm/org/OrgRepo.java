@@ -1,9 +1,9 @@
-package com.huyenhm.group;
+package com.huyenhm.org;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface GroupRepo extends JpaRepository<Group, Long> {
+public interface OrgRepo extends JpaRepository<Org, Long> {
 
 }

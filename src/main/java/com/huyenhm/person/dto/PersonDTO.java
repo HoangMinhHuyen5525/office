@@ -11,7 +11,7 @@ public class PersonDTO {
 
 	@JsonIgnore
 	private String userType;
-	private Long idGroup;
+	private Long org_id;
 	private Long doorRight;
 	private String gender;
 	private PersonValid valid;
@@ -49,12 +49,12 @@ public class PersonDTO {
 		this.userType = userType;
 	}
 
-	public Long getIdGroup() {
-		return idGroup;
+	public Long getOrg_id() {
+		return org_id;
 	}
 
-	public void setIdGroup(Long idGroup) {
-		this.idGroup = idGroup;
+	public void setOrg_id(Long org_id) {
+		this.org_id = org_id;
 	}
 
 	public Long getDoorRight() {

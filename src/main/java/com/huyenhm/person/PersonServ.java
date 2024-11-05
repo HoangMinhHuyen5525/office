@@ -9,19 +9,19 @@ import java.util.Optional;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Example;
-import org.springframework.data.domain.ExampleMatcher;
 import org.springframework.stereotype.Service;
 
 import com.huyenhm.common.Consts;
 import com.huyenhm.common.JsonConverter;
 import com.huyenhm.common.UtilFunction;
 import com.huyenhm.data.CallApi;
-import com.huyenhm.exception.DuplicateException;
+import com.huyenhm.device.Device;
+import com.huyenhm.device.DeviceRepo;
 import com.huyenhm.exception.InvalidInputException;
 import com.huyenhm.exception.ResourceNotFoundException;
 import com.huyenhm.exception.UnauthorizedException;
-import com.huyenhm.group.GroupRepo;
+import com.huyenhm.org.Org;
+import com.huyenhm.org.OrgRepo;
 import com.huyenhm.person.dto.RightPlan;
 import com.huyenhm.person.dto.PersonDTO;
 import com.huyenhm.person.dto.PersonValid;
@@ -33,37 +33,62 @@ public class PersonServ {
 	private PersonRepo userRepo;
 
 	@Autowired
-	private GroupRepo groupRepo;
+	private DeviceRepo deviceRepo;
+
+	@Autowired
+	private OrgRepo orgRepo;
 
 	public List<Person> getAllUsers() {
 		return userRepo.findAll();
 	}
 
-	public Person getUserById(Long id) {
-		return userRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("User not found with ID: " + id));
+	public Person getUserById(String id) {
+		long input = Long.parseLong(UtilFunction.validateInput(id, "ID", "long", true));
+		return userRepo.findById(input)
+				.orElseThrow(() -> new ResourceNotFoundException("Person not found with ID: " + id));
 	}
 
-	public void deleteUser(Long id) {
-		Person User = userRepo.findById(id)
-				.orElseThrow(() -> new ResourceNotFoundException("User not found with ID: " + id));
-		userRepo.delete(User);
+	public Boolean deleteUser(String id) {
+		long input = Long.parseLong(UtilFunction.validateInput(id, "ID", "long", true));
+		Optional<Person> person = userRepo.findById(input);
+		if (person != null) {
+			if (person.get().getEvents() != null) {
+				throw new InvalidInputException("Person cannot be deleted. Its assosiated with events.");
+			}
+			userRepo.deleteById(input);
+		} else {
+			throw new ResourceNotFoundException("User not found with ID: " + id);
+		}
+
+		return true;
 	}
 
-	public List<Person> searchUsers(Person User) {
-		ExampleMatcher matcher = ExampleMatcher.matching().withIgnoreNullValues()
-				.withStringMatcher(ExampleMatcher.StringMatcher.CONTAINING).withIgnoreCase();
-
-		Example<Person> example = Example.of(User, matcher);
-		return userRepo.findAll(example);
+	public List<Person> searchUsers(String key) {
+		List<Person> persons = userRepo.searchByKey(key);
+		if (persons == null) {
+			throw new ResourceNotFoundException("No person found with key: " + key);
+		}
+		return persons;
 	}
 
-	public Person getAscUser(String ip, String port, String username, String password) {
+	public List<Person> getAscUser(String input) {
 		String method = "POST";
 		String body = "{\"UserInfoSearchCond\": {\"searchID\": \"1\",\"maxResults\": 40,\"searchResultPosition\": 0}}";
 
-		Person newuser = new Person();
+		List<Person> newuser = new ArrayList<Person>();
+		long id = Long.parseLong(UtilFunction.validateInput(input, "ID", "long", true));
+		Optional<Device> device = deviceRepo.findById(id);
+		if (device.isEmpty()) {
+			throw new ResourceNotFoundException("Device is not found with id: " + id);
+		}
+		String ip = device.get().getIp();
+		String port = device.get().getPort();
+		String username = device.get().getUsername();
+		String password = device.get().getPassword();
+
 		try {
 			List<String> responseBean = CallApi.callApi(ip, port, Consts.SEARCH_USER, method, username, password, body);
+
 			if (responseBean.get(0).equals("200")) {
 				JSONObject response = JsonConverter.getJSON(responseBean.get(1));
 				JSONObject UserInfoSearch = (JSONObject) response.get("UserInfoSearch");
@@ -73,135 +98,176 @@ public class PersonServ {
 					Optional<Person> existUser = userRepo.findByEmployeeNo(result.get("employeeNo").toString());
 					if (existUser.isPresent()) {
 						Person user = existUser.get();
-						newuser = saveUser(user, result);
+						newuser.add(saveUser(user, result, device));
 					} else {
 						Person user = new Person();
-						newuser = saveUser(user, result);
+						newuser.add(saveUser(user, result, device));
 					}
 				}
+			} else if (responseBean.get(0).equals("401")) {
+				throw new UnauthorizedException("Unauthorized");
 			} else {
-				throw new UnauthorizedException(responseBean.get(1));
+				JSONObject response = JsonConverter.getJSON(responseBean.get(1));
+				JSONObject statusString = (JSONObject) response.get("statusString");
+				JSONObject subStatusCode = (JSONObject) response.get("subStatusCode");
+				JSONObject errorMsg = (JSONObject) response.get("errorMsg");
+				throw new InvalidInputException(statusString + " " + subStatusCode + " " + errorMsg);
 			}
 		} catch (Exception e) {
-			e.printStackTrace();
+			throw new InvalidInputException("Invalid: " + e.getMessage());
 		}
 		return newuser;
 	}
 
-	private Person saveUser(Person user, Map<String, Object> result) {
-		user.setName(
-				result.get("name") == null || result.get("name").equals("") ? null : result.get("name").toString());
-		user.setEmployeeNo(result.get("employeeNo") == null || result.get("employeeNo").equals("") ? null
-				: result.get("employeeNo").toString());
-		user.setUserType(result.get("userType") == null || result.get("userType").equals("") ? null
-				: result.get("userType").toString());
-		user.setIdGroup(result.get("belongGroup") == null || result.get("belongGroup").equals("") ? null
-				: Long.parseLong(result.get("belongGroup").toString()));
-		user.setGender(result.get("gender") == null || result.get("gender").equals("") ? null
-				: result.get("gender").toString());
-		user.setDoorRight(result.get("doorRight") == null || result.get("doorRight").equals("") ? null
-				: Long.parseLong(result.get("doorRight").toString()));
-		user.setNumOfCard(result.get("numOfCard") == null || result.get("numOfCard").equals("") ? null
-				: Integer.parseInt(result.get("numOfCard").toString()));
-		user.setNumOfFP(result.get("numOfFP") == null || result.get("numOfFP").equals("") ? null
-				: Integer.parseInt(result.get("numOfFP").toString()));
-		user.setNumOfFace(result.get("numOfFace") == null || result.get("numOfFace").equals("") ? null
-				: Integer.parseInt(result.get("numOfFace").toString()));
+	private Person saveUser(Person user, Map<String, Object> result, Optional<Device> device) {
+		try {
+			user.setName(
+					result.get("name") == null || result.get("name").equals("") ? null : result.get("name").toString());
+			user.setUserType(result.get("userType") == null || result.get("userType").equals("") ? null
+					: result.get("userType").toString());
+			user.setGender(result.get("gender") == null || result.get("gender").equals("") ? null
+					: result.get("gender").toString());
+			user.setDoorRight(result.get("doorRight") == null || result.get("doorRight").equals("") ? null
+					: Long.parseLong(result.get("doorRight").toString()));
+			user.setNumOfCard(result.get("numOfCard") == null || result.get("numOfCard").equals("") ? null
+					: Integer.parseInt(result.get("numOfCard").toString()));
+			user.setNumOfFP(result.get("numOfFP") == null || result.get("numOfFP").equals("") ? null
+					: Integer.parseInt(result.get("numOfFP").toString()));
+			user.setNumOfFace(result.get("numOfFace") == null || result.get("numOfFace").equals("") ? null
+					: Integer.parseInt(result.get("numOfFace").toString()));
 
-		PersonValid userValid = new PersonValid();
-		JSONObject enable = (JSONObject) result.get("Valid");
-		userValid.setEnable(Boolean.parseBoolean(enable.get("enable") == null || enable.get("enable").equals("") ? null
-				: enable.get("enable").toString()));
+			PersonValid userValid = new PersonValid();
+			JSONObject enable = (JSONObject) result.get("Valid");
+			userValid.setEnable(
+					Boolean.parseBoolean(enable.get("enable") == null || enable.get("enable").equals("") ? null
+							: enable.get("enable").toString()));
 
-		System.out.println(enable.get("beginTime") + " " + enable.get("endTime"));
-		userValid.setBeginDate(enable.get("beginTime") == null || enable.get("beginTime").equals("") ? null
-				: UtilFunction.getDate(enable.get("beginTime").toString()));
-		userValid.setBeginTime(enable.get("beginTime") == null || enable.get("beginTime").equals("") ? null
-				: enable.get("beginTime").toString());
-		userValid.setEndDate(enable.get("endTime") == null || enable.get("endTime").equals("") ? null
-				: UtilFunction.getDate(enable.get("endTime").toString()));
-		userValid.setEndTime(enable.get("endTime") == null || enable.get("endTime").equals("") ? null
-				: enable.get("endTime").toString());
-		userValid.setTimeType(enable.get("enable") == null || enable.get("enable").equals("") ? null
-				: enable.get("timeType").toString());
-		user.setValid(userValid);
+			userValid.setBeginDate(enable.get("beginTime") == null || enable.get("beginTime").equals("") ? null
+					: UtilFunction.getDate(enable.get("beginTime").toString()));
+			userValid.setBeginTime(enable.get("beginTime") == null || enable.get("beginTime").equals("") ? null
+					: enable.get("beginTime").toString());
+			userValid.setEndDate(enable.get("endTime") == null || enable.get("endTime").equals("") ? null
+					: UtilFunction.getDate(enable.get("endTime").toString()));
+			userValid.setEndTime(enable.get("endTime") == null || enable.get("endTime").equals("") ? null
+					: enable.get("endTime").toString());
+			userValid.setTimeType(enable.get("enable") == null || enable.get("enable").equals("") ? null
+					: enable.get("timeType").toString());
+			user.setValid(userValid);
 
-		List<RightPlan> rightPlans = new ArrayList<RightPlan>();
-		RightPlan rightPlan = new RightPlan();
-		JSONArray jsonArray = (JSONArray) result.get("RightPlan");
-		for (Object object : jsonArray) {
-			JSONObject obj = (JSONObject) object;
-			rightPlan.setDoorNo(obj.get("doorNo") == null || obj.get("doorNo").equals("") ? null
-					: Long.parseLong(obj.get("doorNo").toString()));
-			rightPlan.setPlanTemplateNo(obj.get("planTemplateNo") == null || obj.get("planTemplateNo").equals("") ? null
-					: Long.parseLong(obj.get("planTemplateNo").toString()));
-			rightPlans.add(rightPlan);
+			List<RightPlan> rightPlans = new ArrayList<RightPlan>();
+			RightPlan rightPlan = new RightPlan();
+			JSONArray jsonArray = (JSONArray) result.get("RightPlan");
+			for (Object object : jsonArray) {
+				JSONObject obj = (JSONObject) object;
+				rightPlan.setDoorNo(obj.get("doorNo") == null || obj.get("doorNo").equals("") ? null
+						: Long.parseLong(obj.get("doorNo").toString()));
+				rightPlan.setPlanTemplateNo(
+						obj.get("planTemplateNo") == null || obj.get("planTemplateNo").equals("") ? null
+								: Long.parseLong(obj.get("planTemplateNo").toString()));
+				rightPlans.add(rightPlan);
+			}
+			user.setRightPlan(rightPlans);
+
+			user.setEmployeeNo(result.get("employeeNo") == null || result.get("employeeNo").equals("") ? null
+					: result.get("employeeNo").toString());
+
+			if (result.get("belongGroup") == null || result.get("belongGroup").equals("")) {
+				user.setOrg_id(null);
+			} else {
+				Optional<Org> existOrg = orgRepo.findById(Long.parseLong(result.get("belongGroup").toString()));
+				if (existOrg.isPresent()) {
+					user.setOrg_id(Long.parseLong(result.get("belongGroup").toString()));
+					Org org = existOrg.get();
+					user.getOrg().add(org);
+					org.getPerson().add(user);
+				} else {
+					user.setOrg_id(null);
+				}
+			}
+
+			user.getDevice().add(device.get());
+			device.get().getPerson().add(user);
+		} catch (Exception e) {
+			throw new InvalidInputException("Invalid format: " + e.getMessage());
 		}
-		user.setRightPlan(rightPlans);
-
 		return userRepo.save(user);
 	}
 
-	public Person addUser(String ip, String port, String username, String password, PersonDTO userDTO) {
-		String name = UtilFunction.validateInput(userDTO.getName(), "Name", true, "^[a-zA-Z]+$").toString();
-		String fullName = UtilFunction.validateInput(userDTO.getFullName(), "Full name", true, "^[a-zA-Z]+$")
-				.toString();
-		String employeeNo = UtilFunction.validateInput(userDTO.getEmployeeNo(), "Employee No", true, "^[a-zA-Z0-9]+$")
-				.toString();
-		String userType = "normal";
-		Long idGroup = Long
-				.parseLong(UtilFunction.validateInput(userDTO.getIdGroup(), "ID Group", true, "^\\d+$").toString());
-		Long doorRight = Long
-				.parseLong(UtilFunction.validateInput(userDTO.getDoorRight(), "DoorRight", true, "^\\d+$").toString());
-		String gender = UtilFunction.validateInput(userDTO.getGender(), "Gender", true, "^[a-zA-Z]+$").toString();
-
-		PersonValid input = userDTO.getValid();
-		Boolean enable = Boolean.parseBoolean(
-				UtilFunction.validateInput(input.getEnable(), "enable", true, "^(true|false)$").toString());
-		LocalDate beginDate = input.getBeginDate();
-
-		LocalTime beginTime = input.parseBeginTime();
-		LocalDate endDate = input.getEndDate();
-		LocalTime endTime = input.parseEndTime();
-		String timeType = "local";
-
-		Long doorNo = null;
-		Long planTemplateNo = null;
-		List<RightPlan> inputRightPlans = userDTO.getRightPlan();
-		for (RightPlan rightPlan : inputRightPlans) {
-			doorNo = Long
-					.parseLong(UtilFunction.validateInput(rightPlan.getDoorNo(), "Door no", true, "^\\d+$").toString());
-			planTemplateNo = Long.parseLong(UtilFunction
-					.validateInput(rightPlan.getPlanTemplateNo(), "Plan Template No", true, "^\\d+$").toString());
-		}
-
+	public Person addUser(String id, PersonDTO userDTO) {
 		Person newUser = new Person();
-
-		String method = "POST";
-		String body = "{\"UserInfo\": " + "{\"employeeNo\": \"" + employeeNo + "\", " + "\"name\": \"" + name + "\", "
-				+ "\"userType\": \"" + userType + "\", " + "\"closeDelayEnabled\": false, " + "\"Valid\": {"
-				+ "\"enable\": " + enable + "," + "\"beginTime\": \"" + beginDate + "T" + beginTime + "\", "
-				+ "\"endTime\": \"" + endDate + "T" + endTime + "\", " + "\"timeType\": \"local\""
-				+ "}, \"belongGroup\": \"" + idGroup + "\", " + "\"doorRight\": \"" + doorRight + "\", "
-				+ "\"RightPlan\": [{ " + "\"doorNo\": " + doorNo + "," + "\"planTemplateNo\": \"" + planTemplateNo
-				+ "\" " + "}],\"gender\": \"" + gender + "\" }}";
-
-		System.out.println(body);
+		long input = Long.parseLong(UtilFunction.validateInput(id, "ID", "long", true));
+		Optional<Device> device = deviceRepo.findById(input);
+		if (device.isEmpty()) {
+			throw new ResourceNotFoundException("Device is not found with id: " + id);
+		}
 		try {
+			String ip = device.get().getIp();
+			String port = device.get().getPort();
+			String username = device.get().getUsername();
+			String password = device.get().getPassword();
+			String name = UtilFunction.validateInput(userDTO.getName(), "Name", "string", true);
+			String fullname = UtilFunction.validateInput(userDTO.getFullName(), "FullName", "string", false);
+			String employeeNo = UtilFunction.validateInput(userDTO.getEmployeeNo(), "employeeNo", "string", true);
+			Long org_id = Long.parseLong(UtilFunction.validateInput(userDTO.getOrg_id(), "Org id", "long", true));
+			Optional<Org> existOrg = orgRepo.findById(org_id);
+			if (existOrg.isEmpty()) {
+				throw new ResourceNotFoundException("Org is not found with id: " + org_id);
+			}
+			String userType = "normal";
+			Long doorRight = Long
+					.parseLong(UtilFunction.validateInput(userDTO.getDoorRight(), "DoorRight", "long", true));
+			String gender = UtilFunction.validateInput(userDTO.getGender(), "Gender", "gender", true);
+			PersonValid personValid = userDTO.getValid();
+			Boolean enable = Boolean
+					.parseBoolean(UtilFunction.validateInput(personValid.getEnable(), "Enable", "boolean", false));
+			LocalDate beginDate = LocalDate
+					.parse(UtilFunction.validateInput(personValid.getBeginDate(), "Begindate", "date", true));
+			LocalTime beginTime = LocalTime
+					.parse(UtilFunction.validateInput(personValid.getBeginTime(), "Begintime", "time", true));
+			LocalDate endDate = LocalDate
+					.parse(UtilFunction.validateInput(personValid.getEndDate(), "Enddate", "date", true));
+			LocalTime endTime = LocalTime
+					.parse(UtilFunction.validateInput(personValid.getBeginTime(), "End time", "time", true));
+
+			if (endDate.isAfter(beginDate) || endDate.isEqual(beginDate) && endTime.isAfter(beginTime)) {
+				throw new InvalidInputException("Enddate/endtime must after BeginDate/BeginTime");
+			}
+
+			String timeType = "local";
+			Long doorNo = null;
+			Long planTemplateNo = null;
+			List<RightPlan> inputRightPlans = userDTO.getRightPlan();
+			for (RightPlan rightPlan : inputRightPlans) {
+				doorNo = Long.parseLong(UtilFunction.validateInput(rightPlan.getDoorNo(), "Door No", "long", true));
+				planTemplateNo = Long.parseLong(
+						UtilFunction.validateInput(rightPlan.getPlanTemplateNo(), "Plan Template No", "long", true));
+			}
+
+			String method = "POST";
+			String body = "{\"UserInfo\": " + "{\"employeeNo\": \"" + employeeNo + "\", " + "\"name\": \"" + name
+					+ "\", " + "\"userType\": \"" + userType + "\", " + "\"closeDelayEnabled\": false, "
+					+ "\"Valid\": {" + "\"enable\": " + enable + "," + "\"beginTime\": \"" + beginDate + "T" + beginTime
+					+ "\", " + "\"endTime\": \"" + endDate + "T" + endTime + "\", " + "\"timeType\": \"local\""
+					+ "}, \"belongGroup\": \"" + org_id + "\", " + "\"doorRight\": \"" + doorRight + "\", "
+					+ "\"RightPlan\": [{ " + "\"doorNo\": " + doorNo + "," + "\"planTemplateNo\": \"" + planTemplateNo
+					+ "\" " + "}],\"gender\": \"" + gender + "\" }}";
+
+			Optional<Person> existPerson = userRepo.findByEmployeeNo(employeeNo);
+			if (existPerson.isPresent()) {
+				throw new InvalidInputException("Person have existed with this employeeNo: " + employeeNo);
+			}
 			List<String> responseBean = CallApi.callApi(ip, port, Consts.ADD_USER, method, username, password, body);
 			if (responseBean.get(0).equals("200")) {
 				Person user = new Person();
 				user.setName(name);
-				user.setFullName(fullName);
+				user.setFullName(fullname);
 				user.setEmployeeNo(employeeNo);
 				user.setUserType(userType);
-				user.setIdGroup(idGroup);
 				user.setDoorRight(doorRight);
 				user.setGender(gender);
 
-				PersonValid userValid = new PersonValid();
+				PersonValid userValid = userDTO.getValid();
 				userValid.setEnable(enable);
-				System.out.println(beginDate);
 				userValid.setBeginDate(beginDate);
 				userValid.setBeginTime(beginTime.toString());
 				userValid.setEndDate(endDate);
@@ -210,13 +276,21 @@ public class PersonServ {
 
 				user.setValid(userValid);
 
-				List<RightPlan> rightPlans = new ArrayList<RightPlan>();
+				List<RightPlan> rightPlans = userDTO.getRightPlan();
 				for (RightPlan rightPlan : rightPlans) {
 					rightPlan.setDoorNo(doorNo);
 					rightPlan.setPlanTemplateNo(planTemplateNo);
 					rightPlans.add(rightPlan);
 				}
 				user.setRightPlan(rightPlans);
+
+				user.setOrg_id(org_id);
+				Org org = existOrg.get();
+				user.getOrg().add(org);
+				org.getPerson().add(user);
+
+				user.getDevice().add(device.get());
+				device.get().getPerson().add(user);
 
 				newUser = userRepo.save(user);
 
@@ -230,75 +304,87 @@ public class PersonServ {
 				throw new InvalidInputException(statusString + " " + subStatusCode + " " + errorMsg);
 			}
 		} catch (Exception e) {
-			e.printStackTrace();
+			throw new InvalidInputException("Invalid: " + e.getMessage());
 		}
+
 		return newUser;
 	}
 
-	public Person updatePerson(String ip, String port, String username, String password, PersonDTO userDTO) {
-		String name = UtilFunction.validateInput(userDTO.getName(), "Name", true, "^[a-zA-Z]+$").toString();
-		String fullName = UtilFunction.validateInput(userDTO.getFullName(), "Full name", true, "^[a-zA-Z]+$")
-				.toString();
-		String employeeNo = UtilFunction.validateInput(userDTO.getEmployeeNo(), "Employee No", true, "^[a-zA-Z0-9]+$")
-				.toString();
-		String userType = "normal";
-		Long idGroup = Long
-				.parseLong(UtilFunction.validateInput(userDTO.getIdGroup(), "ID Group", true, "^\\d+$").toString());
-		Long doorRight = Long
-				.parseLong(UtilFunction.validateInput(userDTO.getDoorRight(), "DoorRight", true, "^\\d+$").toString());
-		String gender = UtilFunction.validateInput(userDTO.getGender(), "Gender", true, "^[a-zA-Z]+$").toString();
-
-		PersonValid input = userDTO.getValid();
-		Boolean enable = Boolean.parseBoolean(
-				UtilFunction.validateInput(input.getEnable(), "enable", true, "^(true|false)$").toString());
-		LocalDate beginDate = input.getBeginDate();
-
-		LocalTime beginTime = input.parseBeginTime();
-		LocalDate endDate = input.getEndDate();
-		LocalTime endTime = input.parseEndTime();
-		String timeType = "local";
-
-		Long doorNo = null;
-		Long planTemplateNo = null;
-		List<RightPlan> inputRightPlans = userDTO.getRightPlan();
-		for (RightPlan rightPlan : inputRightPlans) {
-			doorNo = Long
-					.parseLong(UtilFunction.validateInput(rightPlan.getDoorNo(), "Door no", true, "^\\d+$").toString());
-			planTemplateNo = Long.parseLong(UtilFunction
-					.validateInput(rightPlan.getPlanTemplateNo(), "Plan Template No", true, "^\\d+$").toString());
-		}
-
-		Person newUser = new Person();
-
-		String method = "PUT";
-		String body = "{\"UserInfo\": " + "{\"employeeNo\": \"" + employeeNo + "\", " + "\"name\": \"" + name + "\", "
-				+ "\"userType\": \"" + userType + "\", " + "\"closeDelayEnabled\": false, " + "\"Valid\": {"
-				+ "\"enable\": " + enable + "," + "\"beginTime\": \"" + beginDate + "T" + beginTime + "\", "
-				+ "\"endTime\": \"" + endDate + "T" + endTime + "\", " + "\"timeType\": \"local\""
-				+ "}, \"belongGroup\": \"" + idGroup + "\", " + "\"doorRight\": \"" + doorRight + "\", "
-				+ "\"RightPlan\": [{ " + "\"doorNo\": " + doorNo + "," + "\"planTemplateNo\": \"" + planTemplateNo
-				+ "\" " + "}],\"gender\": \"" + gender + "\" }}";
-
-		System.out.println(body);
-		List<String> responseBean = null;
-		if (userRepo.findByEmployeeNo(employeeNo).isEmpty()) {
-			throw new ResourceNotFoundException(employeeNo + " not found");
+	public Person updatePerson(String id, PersonDTO userDTO) {
+		Person newUser = null;
+		long input = Long.parseLong(UtilFunction.validateInput(id, "ID", "long", true));
+		Optional<Device> device = deviceRepo.findById(input);
+		if (device.isEmpty()) {
+			throw new ResourceNotFoundException("Device is not found with id: " + id);
 		}
 		try {
-			responseBean = CallApi.callApi(ip, port, Consts.EDIT_USER, method, username, password, body);
-			if (responseBean.get(0).equals("200")) {
+			String ip = device.get().getIp();
+			String port = device.get().getPort();
+			String username = device.get().getUsername();
+			String password = device.get().getPassword();
+			String name = UtilFunction.validateInput(userDTO.getName(), "Name", "string", true);
+			String fullname = UtilFunction.validateInput(userDTO.getFullName(), "FullName", "string", false);
+			String employeeNo = UtilFunction.validateInput(userDTO.getEmployeeNo(), "employeeNo", "string", true);
+			Long org_id = Long.parseLong(UtilFunction.validateInput(userDTO.getOrg_id(), "Org id", "long", true));
+			Optional<Org> existOrg = orgRepo.findById(org_id);
+			if (existOrg.isEmpty()) {
+				throw new ResourceNotFoundException("Org is not found with id: " + org_id);
+			}
+			String userType = "normal";
+			Long doorRight = Long
+					.parseLong(UtilFunction.validateInput(userDTO.getDoorRight(), "DoorRight", "long", true));
+			String gender = UtilFunction.validateInput(userDTO.getGender(), "Gender", "gender", true);
+			PersonValid personValid = userDTO.getValid();
+			Boolean enable = Boolean
+					.parseBoolean(UtilFunction.validateInput(personValid.getEnable(), "Enable", "boolean", false));
+			LocalDate beginDate = LocalDate
+					.parse(UtilFunction.validateInput(personValid.getBeginDate(), "Begindate", "date", true));
+			LocalTime beginTime = LocalTime
+					.parse(UtilFunction.validateInput(personValid.getBeginTime(), "Begintime", "time", true));
+			LocalDate endDate = LocalDate
+					.parse(UtilFunction.validateInput(personValid.getEndDate(), "Enddate", "date", true));
+			LocalTime endTime = LocalTime
+					.parse(UtilFunction.validateInput(personValid.getBeginTime(), "End time", "time", true));
 
-				Person user = userRepo.findByEmployeeNo(employeeNo).get();
+			if (endDate.isAfter(beginDate) || endDate.isEqual(beginDate) && endTime.isAfter(beginTime)) {
+				throw new InvalidInputException("Enddate/endtime must after BeginDate/BeginTime");
+			}
+			String timeType = "local";
+			Long doorNo = null;
+			Long planTemplateNo = null;
+			List<RightPlan> inputRightPlans = userDTO.getRightPlan();
+			for (RightPlan rightPlan : inputRightPlans) {
+				doorNo = Long.parseLong(UtilFunction.validateInput(rightPlan.getDoorNo(), "Door No", "long", true));
+				planTemplateNo = Long.parseLong(
+						UtilFunction.validateInput(rightPlan.getPlanTemplateNo(), "Plan Template No", "long", true));
+			}
+
+			Optional<Person> person = userRepo.findByEmployeeNo(employeeNo);
+			if (person.isEmpty()) {
+				throw new ResourceNotFoundException("Person is not found with employeeNo: " + employeeNo);
+			}
+			String method = "PUT";
+			String body = "{\"UserInfo\": " + "{\"employeeNo\": \"" + employeeNo + "\", " + "\"name\": \"" + name
+					+ "\", " + "\"userType\": \"" + userType + "\", " + "\"closeDelayEnabled\": false, "
+					+ "\"Valid\": {" + "\"enable\": " + enable + "," + "\"beginTime\": \"" + beginDate + "T" + beginTime
+					+ "\", " + "\"endTime\": \"" + endDate + "T" + endTime + "\", " + "\"timeType\": \"local\""
+					+ "}, \"belongGroup\": \"" + org_id + "\", " + "\"doorRight\": \"" + doorRight + "\", "
+					+ "\"RightPlan\": [{ " + "\"doorNo\": " + doorNo + "," + "\"planTemplateNo\": \"" + planTemplateNo
+					+ "\" " + "}],\"gender\": \"" + gender + "\" }}";
+
+			List<String> responseBean = CallApi.callApi(ip, port, Consts.EDIT_USER, method, username, password, body);
+			if (responseBean.get(0).equals("200")) {
+				Person user = person.get();
 				user.setName(name);
-				user.setFullName(fullName);
+				user.setFullName(fullname);
+				user.setEmployeeNo(employeeNo);
 				user.setUserType(userType);
-				user.setIdGroup(idGroup);
+				user.setOrg_id(org_id);
 				user.setDoorRight(doorRight);
 				user.setGender(gender);
 
 				PersonValid userValid = new PersonValid();
 				userValid.setEnable(enable);
-				System.out.println(beginDate);
 				userValid.setBeginDate(beginDate);
 				userValid.setBeginTime(beginTime.toString());
 				userValid.setEndDate(endDate);
@@ -315,23 +401,28 @@ public class PersonServ {
 				}
 				user.setRightPlan(rightPlans);
 
+				user.setOrg_id(org_id);
+				Org org = existOrg.get();
+				user.getOrg().add(org);
+				org.getPerson().add(user);
+
+				user.getDevice().add(device.get());
+				device.get().getPerson().add(user);
 				newUser = userRepo.save(user);
 
-			}
-			System.out.println(responseBean.get(0));
-		} catch (Exception e) {
-			e.printStackTrace();
-			if (responseBean.get(0).equals("401")) {
+			} else if (responseBean.get(0).equals("401")) {
 				throw new UnauthorizedException("Unauthorized");
 			} else {
-				System.out.println(responseBean.get(1));
-//				JSONObject response = JsonConverter.getJSON(responseBean.get(1));
-//				JSONObject statusString = (JSONObject) response.get("statusString");
-//				JSONObject subStatusCode = (JSONObject) response.get("subStatusCode");
-//				JSONObject errorMsg = (JSONObject) response.get("errorMsg");
-//				throw new InvalidInputException(statusString + " " + subStatusCode + " " + errorMsg);
+				JSONObject response = JsonConverter.getJSON(responseBean.get(1));
+				JSONObject statusString = (JSONObject) response.get("statusString");
+				JSONObject subStatusCode = (JSONObject) response.get("subStatusCode");
+				JSONObject errorMsg = (JSONObject) response.get("errorMsg");
+				throw new InvalidInputException(statusString + " " + subStatusCode + " " + errorMsg);
 			}
+		} catch (Exception e) {
+			throw new InvalidInputException("Invalid: " + e.getMessage());
 		}
+
 		return newUser;
 	}
 }

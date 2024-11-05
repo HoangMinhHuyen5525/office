@@ -5,8 +5,9 @@ import java.util.List;
 import java.util.Set;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.huyenhm.device.Device;
 import com.huyenhm.events.Events;
-import com.huyenhm.group.Group;
+import com.huyenhm.org.Org;
 import com.huyenhm.person.dto.RightPlan;
 import com.huyenhm.person.dto.PersonValid;
 
@@ -20,7 +21,6 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToMany;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
@@ -44,12 +44,13 @@ public class Person {
 	@Column(name = "userType")
 	private String userType;
 
-	@Column(name = "idGroup")
-	private Long idGroup;
+	@Column(name = "org_id")
+	private Long org_id;
 
-//	@ManyToOne
-//	@JoinColumn(name = "group_id", nullable = false)
-//	private Group group;
+	@JsonIgnore
+	@ManyToMany
+	@JoinColumn(name = "person_org", referencedColumnName = "org_id", nullable = false)
+	private Set<Org> org = new HashSet<Org>();
 
 	@Column(name = "doorRight")
 	private Long doorRight;
@@ -75,6 +76,11 @@ public class Person {
 	@JsonIgnore
 	@OneToMany(mappedBy = "person", cascade = CascadeType.ALL, orphanRemoval = true)
 	private Set<Events> events;
+
+	@JsonIgnore
+	@ManyToMany
+	@JoinColumn(name = "person_device", referencedColumnName = "device_id", nullable = false)
+	private Set<Device> device = new HashSet<Device>();
 
 	public Long getId() {
 		return id;
@@ -116,12 +122,20 @@ public class Person {
 		this.userType = userType;
 	}
 
-	public Long getIdGroup() {
-		return idGroup;
+	public Long getOrg_id() {
+		return org_id;
 	}
 
-	public void setIdGroup(Long idGroup) {
-		this.idGroup = idGroup;
+	public void setOrg_id(Long org_id) {
+		this.org_id = org_id;
+	}
+
+	public Set<Org> getOrg() {
+		return org;
+	}
+
+	public void setOrg(Set<Org> org) {
+		this.org = org;
 	}
 
 	public Long getDoorRight() {
@@ -186,6 +200,14 @@ public class Person {
 
 	public void setEvents(Set<Events> events) {
 		this.events = events;
+	}
+
+	public Set<Device> getDevice() {
+		return device;
+	}
+
+	public void setDevice(Set<Device> device) {
+		this.device = device;
 	}
 
 }

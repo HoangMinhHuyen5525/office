@@ -9,7 +9,6 @@ import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 
 import com.huyenhm.exception.InvalidInputException;
-import com.huyenhm.exception.RequiredException;
 
 public class UtilFunction {
 
@@ -17,18 +16,68 @@ public class UtilFunction {
 		return str == null || str.isEmpty();
 	}
 
-	public static Object validateInput(Object value, String key, boolean requiresFormat, String regex) {
-		if (value == null || value.toString().isEmpty()) {
-			throw new RequiredException(key + "is required");
+	public static String validateInput(Object value, String key, String type, Boolean required) {
+		if (value == null && required == true || value.toString().isEmpty() && required == true) {
+			throw new InvalidInputException(key + "is required");
 		}
 
 		String stringValue = value.toString();
 
-		if (requiresFormat && regex != null && !Pattern.matches(regex, stringValue)) {
-			throw new InvalidInputException(key + " has an invalid format.");
-		}
+		String stringPattern = "^[\\w\\s]+$";
+		String longPattern = "^[1-9][0-9]*$";
+		String booleanPattern = "^(true|false)$";
+		String datePattern = "^\\d{4}-\\d{2}-\\d{2}$";
+		String timePattern = "^([01]?[0-9]|2[0-3]):([0-5]?[0-9])$";
+		String genderPattern = "^(?i)(male|female)$";
+		String ipPattern = "^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$";
+		String portPattern = "^([0-5]?[0-9]{1,4}|6[0-4][0-9]{2}|65[0-4][0-9]|6553[0-5])$";
 
-		return value;
+		switch (type.toLowerCase()) {
+		case "string":
+			if (!Pattern.matches(stringPattern, stringValue)) {
+				throw new InvalidInputException(value + " is invalid " + key + " format.");
+			}
+			return stringValue;
+		case "long":
+			if (!Pattern.matches(longPattern, stringValue)) {
+				throw new InvalidInputException(value + " is invalid " + key + " format, must be number");
+			}
+			return stringValue;
+		case "boolean":
+			if (!Pattern.matches(booleanPattern, stringValue)) {
+				throw new InvalidInputException(value + " is invalid " + key + " format, must be true/false");
+			}
+			return stringValue;
+		case "date":
+			if (!Pattern.matches(datePattern, stringValue)) {
+				throw new InvalidInputException(value + " is invalid " + key + " format, must be yy:mm:dd format");
+			}
+			return stringValue;
+		case "time":
+			if (!Pattern.matches(timePattern, stringValue)) {
+				throw new InvalidInputException(value + " is invalid " + key + " format, must be hh:mm:ss format");
+			}
+			return stringValue;
+		case "gender":
+			if (!Pattern.matches(genderPattern, stringValue)) {
+				throw new InvalidInputException(value + " is invalid " + key + " format, must be male/female format");
+			}
+			return stringValue;
+		case "ip":
+			if (!Pattern.matches(ipPattern, stringValue)) {
+				throw new InvalidInputException(value + " is invalid " + key + " format, must be IPv4 format");
+			}
+			return stringValue;
+		case "port":
+			if (!Pattern.matches(portPattern, stringValue)) {
+				throw new InvalidInputException(value + " is invalid " + key + " format, must be port 0-65535 format");
+			}
+			return stringValue;
+		default:
+			break;
+		}
+		return stringValue;
+
 	}
 
 	public static LocalDate getDate(String dateStr) {
@@ -43,25 +92,18 @@ public class UtilFunction {
 		if (dateStr == null || "0".equals(dateStr)) {
 			return LocalDateTime.now();
 		}
+		DateTimeFormatter formatterWithZone = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
+		DateTimeFormatter formatterWithoutZone = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 		try {
-			LocalDateTime localDateTime = null;
-			if (hasTimezone(dateStr)) {
-				ZonedDateTime zonedDateTime = ZonedDateTime.parse(dateStr);
-				localDateTime = zonedDateTime.toLocalDateTime();
-			} else {
-				DateTimeFormatter formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
-				localDateTime = LocalDateTime.parse(dateStr, formatter);
-			}
-
-			return localDateTime;
+			ZonedDateTime zonedDateTime = ZonedDateTime.parse(dateStr, formatterWithZone);
+			return zonedDateTime.toLocalDateTime();
 		} catch (DateTimeParseException e) {
-			throw new IllegalArgumentException("Invalid date format: " + e.getMessage());
+			try {
+				return LocalDateTime.parse(dateStr, formatterWithoutZone);
+			} catch (DateTimeParseException ex) {
+				throw new IllegalArgumentException("Invalid date format: " + ex.getMessage());
+			}
 		}
-	}
-
-	private static boolean hasTimezone(String dateTime) {
-		String timezonePattern = "([+-]\\d{2}:?\\d{2}|Z|GMT|UTC|[A-Za-z]+)";
-		return Pattern.compile(timezonePattern).matcher(dateTime).find();
 	}
 }

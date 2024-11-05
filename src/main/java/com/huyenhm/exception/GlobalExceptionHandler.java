@@ -23,7 +23,7 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(InvalidInputException.class)
 	public ResponseEntity<ResponseBean> handleInvalidInput(InvalidInputException ex) {
-		ResponseBean response = new ResponseBean(401, ex.getMessage(), null);
+		ResponseBean response = new ResponseBean(400, ex.getMessage(), null);
 		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
 	}
 

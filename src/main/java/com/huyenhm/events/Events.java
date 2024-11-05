@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.huyenhm.device.Device;
 import com.huyenhm.person.Person;
 
 import jakarta.persistence.Column;
@@ -43,11 +44,19 @@ public class Events {
 
 	@JsonIgnore
 	@ManyToOne
-	@JoinColumn(name = "person_id", referencedColumnName = "id", insertable = false, updatable = false)
+	@JoinColumn(name = "person_id", referencedColumnName = "person_id", insertable = false, updatable = false)
 	private Person person;
 
 	@Column(name = "person_id")
 	private Long person_id;
+
+	@JsonIgnore
+	@ManyToOne
+	@JoinColumn(name = "device_id", referencedColumnName = "device_id", insertable = false, updatable = false)
+	private Device device;
+
+	@Column(name = "device_id")
+	private Long device_id;
 
 	@Column(name = "doorNo")
 	private Long doorNo;
@@ -174,6 +183,22 @@ public class Events {
 
 	public void setPerson_id(Long person_id) {
 		this.person_id = person_id;
+	}
+
+	public Device getDevice() {
+		return device;
+	}
+
+	public void setDevice(Device device) {
+		this.device = device;
+	}
+
+	public Long getDevice_id() {
+		return device_id;
+	}
+
+	public void setDevice_id(Long device_id) {
+		this.device_id = device_id;
 	}
 
 }

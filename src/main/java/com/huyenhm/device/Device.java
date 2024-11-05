@@ -1,29 +1,39 @@
 package com.huyenhm.device;
 
+import java.util.HashSet;
+import java.util.Set;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.huyenhm.events.Events;
+import com.huyenhm.person.Person;
+
 import jakarta.annotation.Nonnull;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.ManyToMany;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "Devices")
-public class Device{
+@Table(name = "Device")
+public class Device {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
-	
+
 	@Nonnull
 	@Column(name = "name")
 	private String name;
-	
+
 	@Nonnull
 	@Column(name = "ip")
 	private String ip;
-	
+
 	@Nonnull
 	@Column(name = "port")
 	private String port;
@@ -35,31 +45,39 @@ public class Device{
 	@Nonnull
 	@Column(name = "password")
 	private String password;
-	
+
 	@Column(name = "status")
 	private String status;
-	
+
 	@Column(name = "deviceName")
 	private String deviceName;
-	
+
 	@Column(name = "deviceID")
 	private Long deviceID;
-	
+
 	@Column(name = "model")
 	private String model;
-	
+
 	@Column(name = "serialNumber")
 	private String serialNumber;
-	
+
 	@Column(name = "macAddress")
 	private String macAddress;
-	
+
 	@Column(name = "firmwareVersion")
 	private String firmwareVersion;
-	
+
 	@Column(name = "encoderVersion")
 	private String encoderVersion;
-	
+
+	@JsonIgnore
+	@ManyToMany(mappedBy = "device")
+	private Set<Person> person = new HashSet<Person>();
+
+	@JsonIgnore
+	@OneToMany(mappedBy = "device", cascade = CascadeType.ALL, orphanRemoval = true)
+	private Set<Events> events = new HashSet<Events>();
+
 	public Long getId() {
 		return id;
 	}
@@ -171,5 +189,21 @@ public class Device{
 	public void setEncoderVersion(String encoderVersion) {
 		this.encoderVersion = encoderVersion;
 	}
-	
+
+	public Set<Person> getPerson() {
+		return person;
+	}
+
+	public void setPerson(Set<Person> person) {
+		this.person = person;
+	}
+
+	public Set<Events> getEvents() {
+		return events;
+	}
+
+	public void setEvents(Set<Events> events) {
+		this.events = events;
+	}
+
 }
