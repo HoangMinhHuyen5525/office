@@ -30,6 +30,9 @@ public class Events {
 	@Column(name = "time")
 	private LocalTime time;
 
+	@Column(name = "type")
+	private String type;
+
 	@Column(name = "serialNo")
 	private Long serialNo;
 
@@ -44,7 +47,7 @@ public class Events {
 
 	@JsonIgnore
 	@ManyToOne
-	@JoinColumn(name = "person_id", referencedColumnName = "person_id", insertable = false, updatable = false)
+	@JoinColumn(name = "person_id", referencedColumnName = "id", insertable = false, updatable = false)
 	private Person person;
 
 	@Column(name = "person_id")
@@ -52,7 +55,7 @@ public class Events {
 
 	@JsonIgnore
 	@ManyToOne
-	@JoinColumn(name = "device_id", referencedColumnName = "device_id", insertable = false, updatable = false)
+	@JoinColumn(name = "device_id", referencedColumnName = "id", insertable = false, updatable = false)
 	private Device device;
 
 	@Column(name = "device_id")
@@ -95,6 +98,14 @@ public class Events {
 
 	public void setTime(LocalTime time) {
 		this.time = time;
+	}
+
+	public String getType() {
+		return type;
+	}
+
+	public void setType(String type) {
+		this.type = type;
 	}
 
 	public Long getSerialNo() {

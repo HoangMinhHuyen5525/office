@@ -52,7 +52,7 @@ public class PersonServ {
 		long input = Long.parseLong(UtilFunction.validateInput(id, "ID", "long", true));
 		Optional<Person> person = userRepo.findById(input);
 		if (person != null) {
-			if (person.get().getEvents() != null) {
+			if (!person.get().getEvents().isEmpty()) {
 				throw new InvalidInputException("Person cannot be deleted. Its assosiated with events.");
 			}
 			userRepo.deleteById(input);
@@ -64,8 +64,9 @@ public class PersonServ {
 	}
 
 	public List<Person> searchUsers(String key) {
-		List<Person> persons = userRepo.searchByKey(key);
-		if (persons == null) {
+		String normal = UtilFunction.removeVietnameseAccents(key);
+		List<Person> persons = userRepo.searchByKey(normal);
+		if (persons.isEmpty()) {
 			throw new ResourceNotFoundException("No person found with key: " + key);
 		}
 		return persons;
@@ -145,11 +146,11 @@ public class PersonServ {
 			userValid.setBeginDate(enable.get("beginTime") == null || enable.get("beginTime").equals("") ? null
 					: UtilFunction.getDate(enable.get("beginTime").toString()));
 			userValid.setBeginTime(enable.get("beginTime") == null || enable.get("beginTime").equals("") ? null
-					: enable.get("beginTime").toString());
+					: UtilFunction.getTime(enable.get("beginTime").toString()).toString());
 			userValid.setEndDate(enable.get("endTime") == null || enable.get("endTime").equals("") ? null
 					: UtilFunction.getDate(enable.get("endTime").toString()));
 			userValid.setEndTime(enable.get("endTime") == null || enable.get("endTime").equals("") ? null
-					: enable.get("endTime").toString());
+					: UtilFunction.getTime(enable.get("endTime").toString()).toString());
 			userValid.setTimeType(enable.get("enable") == null || enable.get("enable").equals("") ? null
 					: enable.get("timeType").toString());
 			user.setValid(userValid);
@@ -208,6 +209,10 @@ public class PersonServ {
 			String name = UtilFunction.validateInput(userDTO.getName(), "Name", "string", true);
 			String fullname = UtilFunction.validateInput(userDTO.getFullName(), "FullName", "string", false);
 			String employeeNo = UtilFunction.validateInput(userDTO.getEmployeeNo(), "employeeNo", "string", true);
+			Optional<Person> existPerson = userRepo.findByEmployeeNo(employeeNo);
+			if (existPerson.isPresent()) {
+				throw new InvalidInputException("Person have existed with this employeeNo: " + employeeNo);
+			}
 			Long org_id = Long.parseLong(UtilFunction.validateInput(userDTO.getOrg_id(), "Org id", "long", true));
 			Optional<Org> existOrg = orgRepo.findById(org_id);
 			if (existOrg.isEmpty()) {
@@ -222,14 +227,13 @@ public class PersonServ {
 					.parseBoolean(UtilFunction.validateInput(personValid.getEnable(), "Enable", "boolean", false));
 			LocalDate beginDate = LocalDate
 					.parse(UtilFunction.validateInput(personValid.getBeginDate(), "Begindate", "date", true));
-			LocalTime beginTime = LocalTime
-					.parse(UtilFunction.validateInput(personValid.getBeginTime(), "Begintime", "time", true));
+			String beginTime = UtilFunction.validateInput(personValid.getBeginTime(), "Begintime", "time", true);
 			LocalDate endDate = LocalDate
 					.parse(UtilFunction.validateInput(personValid.getEndDate(), "Enddate", "date", true));
-			LocalTime endTime = LocalTime
-					.parse(UtilFunction.validateInput(personValid.getBeginTime(), "End time", "time", true));
+			String endTime = UtilFunction.validateInput(personValid.getBeginTime(), "End time", "time", true);
 
-			if (endDate.isAfter(beginDate) || endDate.isEqual(beginDate) && endTime.isAfter(beginTime)) {
+			if (endDate.isBefore(beginDate)
+					|| endDate.isEqual(beginDate) && LocalTime.parse(endTime).isBefore(LocalTime.parse(beginTime))) {
 				throw new InvalidInputException("Enddate/endtime must after BeginDate/BeginTime");
 			}
 
@@ -252,10 +256,6 @@ public class PersonServ {
 					+ "\"RightPlan\": [{ " + "\"doorNo\": " + doorNo + "," + "\"planTemplateNo\": \"" + planTemplateNo
 					+ "\" " + "}],\"gender\": \"" + gender + "\" }}";
 
-			Optional<Person> existPerson = userRepo.findByEmployeeNo(employeeNo);
-			if (existPerson.isPresent()) {
-				throw new InvalidInputException("Person have existed with this employeeNo: " + employeeNo);
-			}
 			List<String> responseBean = CallApi.callApi(ip, port, Consts.ADD_USER, method, username, password, body);
 			if (responseBean.get(0).equals("200")) {
 				Person user = new Person();
@@ -269,9 +269,9 @@ public class PersonServ {
 				PersonValid userValid = userDTO.getValid();
 				userValid.setEnable(enable);
 				userValid.setBeginDate(beginDate);
-				userValid.setBeginTime(beginTime.toString());
+				userValid.setBeginTime(beginTime);
 				userValid.setEndDate(endDate);
-				userValid.setEndTime(endTime.toString());
+				userValid.setEndTime(endTime);
 				userValid.setTimeType(timeType);
 
 				user.setValid(userValid);
@@ -293,18 +293,9 @@ public class PersonServ {
 				device.get().getPerson().add(user);
 
 				newUser = userRepo.save(user);
-
-			} else if (responseBean.get(0).equals("401")) {
-				throw new UnauthorizedException("Unauthorized");
-			} else {
-				JSONObject response = JsonConverter.getJSON(responseBean.get(1));
-				JSONObject statusString = (JSONObject) response.get("statusString");
-				JSONObject subStatusCode = (JSONObject) response.get("subStatusCode");
-				JSONObject errorMsg = (JSONObject) response.get("errorMsg");
-				throw new InvalidInputException(statusString + " " + subStatusCode + " " + errorMsg);
 			}
 		} catch (Exception e) {
-			throw new InvalidInputException("Invalid: " + e.getMessage());
+			throw new InvalidInputException(e.getMessage());
 		}
 
 		return newUser;
@@ -325,6 +316,10 @@ public class PersonServ {
 			String name = UtilFunction.validateInput(userDTO.getName(), "Name", "string", true);
 			String fullname = UtilFunction.validateInput(userDTO.getFullName(), "FullName", "string", false);
 			String employeeNo = UtilFunction.validateInput(userDTO.getEmployeeNo(), "employeeNo", "string", true);
+			Optional<Person> person = userRepo.findByEmployeeNo(employeeNo);
+			if (person.isEmpty()) {
+				throw new ResourceNotFoundException("Person is not found with employeeNo: " + employeeNo);
+			}
 			Long org_id = Long.parseLong(UtilFunction.validateInput(userDTO.getOrg_id(), "Org id", "long", true));
 			Optional<Org> existOrg = orgRepo.findById(org_id);
 			if (existOrg.isEmpty()) {
@@ -339,14 +334,13 @@ public class PersonServ {
 					.parseBoolean(UtilFunction.validateInput(personValid.getEnable(), "Enable", "boolean", false));
 			LocalDate beginDate = LocalDate
 					.parse(UtilFunction.validateInput(personValid.getBeginDate(), "Begindate", "date", true));
-			LocalTime beginTime = LocalTime
-					.parse(UtilFunction.validateInput(personValid.getBeginTime(), "Begintime", "time", true));
+			String beginTime = UtilFunction.validateInput(personValid.getBeginTime(), "Begintime", "time", true);
 			LocalDate endDate = LocalDate
 					.parse(UtilFunction.validateInput(personValid.getEndDate(), "Enddate", "date", true));
-			LocalTime endTime = LocalTime
-					.parse(UtilFunction.validateInput(personValid.getBeginTime(), "End time", "time", true));
+			String endTime = UtilFunction.validateInput(personValid.getBeginTime(), "End time", "time", true);
 
-			if (endDate.isAfter(beginDate) || endDate.isEqual(beginDate) && endTime.isAfter(beginTime)) {
+			if (endDate.isBefore(beginDate)
+					|| endDate.isEqual(beginDate) && LocalTime.parse(endTime).isBefore(LocalTime.parse(beginTime))) {
 				throw new InvalidInputException("Enddate/endtime must after BeginDate/BeginTime");
 			}
 			String timeType = "local";
@@ -359,10 +353,6 @@ public class PersonServ {
 						UtilFunction.validateInput(rightPlan.getPlanTemplateNo(), "Plan Template No", "long", true));
 			}
 
-			Optional<Person> person = userRepo.findByEmployeeNo(employeeNo);
-			if (person.isEmpty()) {
-				throw new ResourceNotFoundException("Person is not found with employeeNo: " + employeeNo);
-			}
 			String method = "PUT";
 			String body = "{\"UserInfo\": " + "{\"employeeNo\": \"" + employeeNo + "\", " + "\"name\": \"" + name
 					+ "\", " + "\"userType\": \"" + userType + "\", " + "\"closeDelayEnabled\": false, "
@@ -386,9 +376,9 @@ public class PersonServ {
 				PersonValid userValid = new PersonValid();
 				userValid.setEnable(enable);
 				userValid.setBeginDate(beginDate);
-				userValid.setBeginTime(beginTime.toString());
+				userValid.setBeginTime(beginTime);
 				userValid.setEndDate(endDate);
-				userValid.setEndTime(endTime.toString());
+				userValid.setEndTime(endTime);
 				userValid.setTimeType(timeType);
 
 				user.setValid(userValid);
@@ -410,14 +400,6 @@ public class PersonServ {
 				device.get().getPerson().add(user);
 				newUser = userRepo.save(user);
 
-			} else if (responseBean.get(0).equals("401")) {
-				throw new UnauthorizedException("Unauthorized");
-			} else {
-				JSONObject response = JsonConverter.getJSON(responseBean.get(1));
-				JSONObject statusString = (JSONObject) response.get("statusString");
-				JSONObject subStatusCode = (JSONObject) response.get("subStatusCode");
-				JSONObject errorMsg = (JSONObject) response.get("errorMsg");
-				throw new InvalidInputException(statusString + " " + subStatusCode + " " + errorMsg);
 			}
 		} catch (Exception e) {
 			throw new InvalidInputException("Invalid: " + e.getMessage());

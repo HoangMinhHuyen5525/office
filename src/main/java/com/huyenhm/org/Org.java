@@ -15,7 +15,7 @@ import jakarta.persistence.ManyToMany;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "Org")
+@Table(name = "org")
 public class Org {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)

@@ -19,7 +19,7 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "Device")
+@Table(name = "device")
 public class Device {
 
 	@Id
@@ -52,8 +52,8 @@ public class Device {
 	@Column(name = "deviceName")
 	private String deviceName;
 
-	@Column(name = "deviceID")
-	private Long deviceID;
+	@Column(name = "deviceIndex")
+	private Long deviceIndex;
 
 	@Column(name = "model")
 	private String model;
@@ -142,12 +142,12 @@ public class Device {
 		this.deviceName = deviceName;
 	}
 
-	public Long getDeviceID() {
-		return deviceID;
+	public Long getDeviceIndex() {
+		return deviceIndex;
 	}
 
-	public void setDeviceID(Long deviceID) {
-		this.deviceID = deviceID;
+	public void setDeviceIndex(Long deviceIndex) {
+		this.deviceIndex = deviceIndex;
 	}
 
 	public String getModel() {

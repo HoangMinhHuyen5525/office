@@ -11,13 +11,14 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface DeviceRepo extends JpaRepository<Device, Long> {
 
-	public Optional<Device> findByIp(String ip);
+	public Optional<Device> findByIpOrName(String ip, String name);
+	
 
-	@Query(value = "SELECT * FROM DEVICE WHERE DEVICE.IP LIKE CONCAT(%, :key) "
-			+ "OR DEVICE.NAME LIKE CONCAT(%, : key) "
-			+ "OR DEVICE.deviceName LIKE CONCAT(%, : key) "
-			+ "OR DEVICE.serialNumber LIKE CONCAT(%, : key) "
-			+ "OR DEVICE.status LIKE CONCAT(%, : key) ", nativeQuery = true)
+	@Query(value = "SELECT * FROM DEVICE WHERE LOWER(CONCAT('%', DEVICE.IP, '%')) LIKE LOWER(CONCAT('%', :key, '%')) "
+			+ "OR LOWER(CONCAT('%', DEVICE.NAME, '%')) LIKE LOWER(CONCAT('%', :key, '%')) "
+			+ "OR LOWER(CONCAT('%', DEVICE.DEVICE_NAME, '%')) LIKE LOWER(CONCAT('%', :key, '%')) "
+			+ "OR LOWER(CONCAT('%', DEVICE.SERIAL_NUMBER, '%')) LIKE LOWER(CONCAT('%', :key, '%')) "
+			+ "OR LOWER(CONCAT('%', DEVICE.STATUS, '%')) LIKE LOWER(CONCAT('%', :key, '%')) ", nativeQuery = true)
 	public List<Device> searchByKey(@Param("key") String key);
 
 }

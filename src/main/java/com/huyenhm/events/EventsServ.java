@@ -10,10 +10,13 @@ import java.util.stream.Collectors;
 
 import org.json.simple.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import com.huyenhm.common.Consts;
 import com.huyenhm.common.JsonConverter;
+import com.huyenhm.common.PaginationRequest;
 import com.huyenhm.common.UtilFunction;
 import com.huyenhm.data.CallApi;
 import com.huyenhm.device.Device;
@@ -36,8 +39,8 @@ public class EventsServ {
 	@Autowired
 	private PersonRepo personRepo;
 
-	public List<Events> getEvents() {
-		return eventsRepo.findAll();
+	public Page<Events> getEvents(Pageable pageable) {
+		return eventsRepo.findAll(pageable);
 	}
 
 	public Events getEventsById(String id) {
@@ -75,11 +78,12 @@ public class EventsServ {
 
 		try {
 			LocalDate beginDate = LocalDate.parse(UtilFunction.validateInput(startDate, "Begindate", "date", true));
-			LocalTime beginTime = LocalTime.parse(UtilFunction.validateInput(startTime, "Begintime", "time", true));
+			String beginTime = UtilFunction.validateInput(startTime, "Begintime", "time", true);
 			LocalDate endDate = LocalDate.parse(UtilFunction.validateInput(lastDate, "Enddate", "date", true));
-			LocalTime endTime = LocalTime.parse(UtilFunction.validateInput(lastTime, "End time", "time", true));
+			String endTime = UtilFunction.validateInput(lastTime, "End time", "time", true);
 
-			if (endDate.isAfter(beginDate) || endDate.isEqual(beginDate) && endTime.isAfter(beginTime)) {
+			if (endDate.isBefore(beginDate)
+					|| endDate.isEqual(beginDate) && LocalTime.parse(endTime).isBefore(LocalTime.parse(beginTime))) {
 				throw new InvalidInputException("Enddate/endtime must after BeginDate/BeginTime");
 			}
 			long totalMatch = totalMatch(ip, port, method, username, password, beginDate.toString(),
@@ -99,7 +103,7 @@ public class EventsServ {
 					JSONObject AcsEvent = (JSONObject) response.get("AcsEvent");
 					List<JSONObject> InfoList = (List<JSONObject>) AcsEvent.get("InfoList");
 					for (JSONObject info : InfoList) {
-						if (info.get("currentVerifyMode").equals("cardOrFaceOrFp")) {
+						if (info.get("currentVerifyMode").equals("cardOrFaceOrFp") && info.get("name") != null) {
 							Map<String, Object> e = info;
 							Optional<Events> existEvent = eventsRepo
 									.findBySerialNo(Long.parseLong(e.get("serialNo").toString()));
@@ -112,14 +116,6 @@ public class EventsServ {
 							}
 						}
 					}
-				} else if (result.get(0).equals("401")) {
-					throw new UnauthorizedException("Unauthorized");
-				} else {
-					JSONObject response = JsonConverter.getJSON(result.get(1));
-					JSONObject statusString = (JSONObject) response.get("statusString");
-					JSONObject subStatusCode = (JSONObject) response.get("subStatusCode");
-					JSONObject errorMsg = (JSONObject) response.get("errorMsg");
-					throw new InvalidInputException(statusString + " " + subStatusCode + " " + errorMsg);
 				}
 			}
 		} catch (Exception e) {
@@ -135,12 +131,9 @@ public class EventsServ {
 		String body = "{\"AcsEventCond\": { \"searchID\": \"1\",\"searchResultPosition\": " + searchResultPosition
 				+ ",\"maxResults\": 24,\"major\": 0,\"minor\": 0," + "\"startTime\": \"" + startDate + "T" + startTime
 				+ "+07:00\",\"endTime\": \"" + endDate + "T" + endTime + "+07:00\"}}";
-
 		long totalMatch = 0;
-
-		List<String> result = null;
 		try {
-			result = CallApi.callApi(ip, port, Consts.SEARCH_EVENTS, method, username, password, body);
+			List<String> result = CallApi.callApi(ip, port, Consts.SEARCH_EVENTS, method, username, password, body);
 			if (result.get(0).equals("200")) {
 				JSONObject response = JsonConverter.getJSON(result.get(1));
 				JSONObject AcsEvent = (JSONObject) response.get("AcsEvent");
@@ -190,7 +183,7 @@ public class EventsServ {
 				}
 			}
 
-			events.setDevice_id(device.get().getDeviceID());
+			events.setDevice_id(device.get().getId());
 			device.get().getEvents().add(events);
 
 		} catch (Exception e) {
@@ -226,5 +219,33 @@ public class EventsServ {
 			}
 		}
 		return result;
+	}
+
+	public List<Events> searchEvents(List<String> searchTerm, String startDate, String endDate, String startTime,
+			String endTime) {
+		List<Events> list = new ArrayList<Events>();
+		try {
+			LocalDate beginDate = startDate == null || startDate.equals("") ? LocalDate.now()
+					: LocalDate.parse(UtilFunction.validateInput(startDate, "Begindate", "date", false));
+			LocalTime beginTime = startTime == null || startTime.equals("") ? LocalTime.MIN
+					: LocalTime.parse(UtilFunction.validateInput(startTime, "Begintime", "time", false));
+			LocalDate lastDate = endDate == null || endDate.equals("") ? LocalDate.now()
+					: LocalDate.parse(UtilFunction.validateInput(endDate, "Enddate", "date", false));
+			LocalTime lastTime = endTime == null || endTime.equals("") ? LocalTime.now()
+					: LocalTime.parse(UtilFunction.validateInput(endTime, "End time", "time", false));
+			if (lastDate.isBefore(beginDate) || lastDate.isEqual(beginDate) && lastTime.isBefore(beginTime)) {
+				throw new InvalidInputException("Enddate/endtime must after BeginDate/BeginTime");
+			}
+			for (int i = 0; i < searchTerm.size(); i++) {
+				String input = searchTerm.get(i) == null || searchTerm.get(i).equals("") ? null : searchTerm.get(i);
+				List<Events> item = eventsRepo.searchEvents(input, beginDate, lastDate, beginTime, lastTime);
+				for(Events event : item) {
+					list.add(event);
+				}
+			}
+		} catch (Exception e) {
+			throw new InvalidInputException(e.getMessage());
+		}
+		return list;
 	}
 }

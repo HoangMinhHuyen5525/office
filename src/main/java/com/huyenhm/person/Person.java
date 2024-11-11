@@ -20,12 +20,13 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "Person")
+@Table(name = "person")
 public class Person {
 
 	@Id
@@ -49,7 +50,7 @@ public class Person {
 
 	@JsonIgnore
 	@ManyToMany
-	@JoinColumn(name = "person_org", referencedColumnName = "org_id", nullable = false)
+	@JoinTable(name = "person_org", joinColumns = @JoinColumn(name = "person_id"), inverseJoinColumns = @JoinColumn(name = "org_id"))
 	private Set<Org> org = new HashSet<Org>();
 
 	@Column(name = "doorRight")
@@ -79,7 +80,7 @@ public class Person {
 
 	@JsonIgnore
 	@ManyToMany
-	@JoinColumn(name = "person_device", referencedColumnName = "device_id", nullable = false)
+	@JoinTable(name = "person_device", joinColumns = @JoinColumn(name = "person_id"), inverseJoinColumns = @JoinColumn(name = "device_id"))
 	private Set<Device> device = new HashSet<Device>();
 
 	public Long getId() {

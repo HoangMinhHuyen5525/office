@@ -1,12 +1,28 @@
 package com.huyenhm.common;
 
+import java.text.Normalizer;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.Collections;
+import java.util.List;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
+import java.io.IOException;
+import java.io.StringReader;
 
 import com.huyenhm.exception.InvalidInputException;
 
@@ -23,20 +39,16 @@ public class UtilFunction {
 
 		String stringValue = value.toString();
 
-		String stringPattern = "^[\\w\\s]+$";
 		String longPattern = "^[1-9][0-9]*$";
 		String booleanPattern = "^(true|false)$";
 		String datePattern = "^\\d{4}-\\d{2}-\\d{2}$";
-		String timePattern = "^([01]?[0-9]|2[0-3]):([0-5]?[0-9])$";
+		String timePattern = "^([01]?[0-9]|2[0-3]):([0-5]?[0-9]):([0-5]?[0-9])$";
 		String genderPattern = "^(?i)(male|female)$";
 		String ipPattern = "^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$";
 		String portPattern = "^([0-5]?[0-9]{1,4}|6[0-4][0-9]{2}|65[0-4][0-9]|6553[0-5])$";
 
 		switch (type.toLowerCase()) {
 		case "string":
-			if (!Pattern.matches(stringPattern, stringValue)) {
-				throw new InvalidInputException(value + " is invalid " + key + " format.");
-			}
 			return stringValue;
 		case "long":
 			if (!Pattern.matches(longPattern, stringValue)) {
@@ -105,5 +117,44 @@ public class UtilFunction {
 				throw new IllegalArgumentException("Invalid date format: " + ex.getMessage());
 			}
 		}
+	}
+
+	public static String removeVietnameseAccents(String str) {
+		String normalizedString = Normalizer.normalize(str, Normalizer.Form.NFD);
+
+		Pattern pattern = Pattern.compile("\\p{InCombiningDiacriticalMarks}+");
+		return pattern.matcher(normalizedString).replaceAll("");
+	}
+
+	public static boolean isValidXML(String xml) {
+		try {
+			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+			DocumentBuilder builder = factory.newDocumentBuilder();
+			builder.parse(new InputSource(new StringReader(xml)));
+			return true;
+		} catch (SAXException | IOException | ParserConfigurationException e) {
+			return false;
+		}
+	}
+
+	private static final int DEFAULT_PAGE = 0;
+	private static final int DEFAULT_SIZE = 20;
+	private static final String DEFAULT_SORT_FIELD = "id";
+	private static final Sort.Order DEFAULT_SORT_ORDER = Sort.Order.asc(DEFAULT_SORT_FIELD);
+
+	public static Pageable createPageable(PaginationRequest paginationRequest) {
+		int page = (paginationRequest.getPage() != null) ? paginationRequest.getPage() : DEFAULT_PAGE;
+		int size = (paginationRequest.getSize() != null) ? paginationRequest.getSize() : DEFAULT_SIZE;
+
+		List<String> sortFields = (paginationRequest.getSort() != null && !paginationRequest.getSort().isEmpty())
+				? paginationRequest.getSort()
+				: Collections.singletonList(DEFAULT_SORT_FIELD); // Default to sorting by 'id'
+
+		List<Sort.Order> orders = sortFields.stream().map(field -> new Sort.Order(Sort.Direction.ASC, field))
+				.collect(Collectors.toList());
+
+		Sort sort = Sort.by(orders);
+
+		return PageRequest.of(page, size, sort);
 	}
 }

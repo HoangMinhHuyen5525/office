@@ -6,9 +6,6 @@ import java.util.Optional;
 import org.json.simple.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.data.domain.Example;
-import org.springframework.data.domain.ExampleMatcher;
-
 import com.huyenhm.common.Consts;
 import com.huyenhm.common.JsonConverter;
 import com.huyenhm.common.UtilFunction;
@@ -81,11 +78,13 @@ public class DeviceServ {
 	}
 
 	public List<Device> searchDevices(String key) {
-		List<Device> devices = deviceRepo.searchByKey(key);
-		if (devices == null) {
+		String normal = UtilFunction.removeVietnameseAccents(key);
+		List<Device> devices = deviceRepo.searchByKey(normal);
+		if (devices.isEmpty()) {
 			throw new ResourceNotFoundException("No device found with key: " + key);
+		} else {
+			return devices;
 		}
-		return devices;
 	}
 
 	public Device addDevice(DeviceDTO deviceDTO) {
@@ -97,36 +96,47 @@ public class DeviceServ {
 			String username = UtilFunction.validateInput(deviceDTO.getUsername(), "Username", "string", true);
 			String password = UtilFunction.validateInput(deviceDTO.getPassword(), "Password", "string", true);
 
-			Optional<Device> existDevice = deviceRepo.findByIp(ip);
+			Optional<Device> existDevice = deviceRepo.findByIpOrName(ip, name);
 			if (existDevice.isPresent()) {
-				throw new InvalidInputException("Device have existed with ip: " + ip);
+				throw new InvalidInputException("Device have existed with ip: " + ip + "or name: " + name);
 			}
 
-			String method = "GET";
-			List<String> responseBean = CallApi.callApi(ip, port, Consts.GET_DEVICE, method, username, password, null);
-			if (responseBean.get(0).equals("200")) {
+			if (NetworkMonitor.pingDevice(ip).equals("Offline")) {
 				Device device = new Device();
-				JSONObject response = JsonConverter.XMLConverted(responseBean.get(1));
 				device.setName(name);
 				device.setIp(ip);
 				device.setPort(port);
 				device.setUsername(username);
 				device.setPassword(password);
 				device.setStatus(NetworkMonitor.pingDevice(ip));
-				device.setDeviceID(Long.parseLong(response.get("deviceID").toString()));
-				device.setDeviceName((response.get("deviceName").toString()));
-				device.setEncoderVersion(response.get("encoderVersion").toString());
-				device.setFirmwareVersion(response.get("firmwareVersion").toString());
-				device.setMacAddress(response.get("macAddress").toString());
-				device.setModel(response.get("model").toString());
-				device.setSerialNumber(response.get("serialNumber").toString());
-
 				newDevice = deviceRepo.save(device);
 			} else {
-				throw new UnauthorizedException("Unauthorized");
+				String method = "GET";
+				List<String> responseBean = CallApi.callApi(ip, port, Consts.GET_DEVICE, method, username, password,
+						null);
+				if (responseBean.get(0).equals("200")) {
+					Device device = new Device();
+					JSONObject response = JsonConverter.XMLConverted(responseBean.get(1));
+					device.setName(name);
+					device.setIp(ip);
+					device.setPort(port);
+					device.setUsername(username);
+					device.setPassword(password);
+					device.setStatus(NetworkMonitor.pingDevice(ip));
+					device.setDeviceIndex(Long.parseLong(response.get("deviceID").toString()));
+					device.setDeviceName((response.get("deviceName").toString()));
+					device.setEncoderVersion(response.get("encoderVersion").toString());
+					device.setFirmwareVersion(response.get("firmwareVersion").toString());
+					device.setMacAddress(response.get("macAddress").toString());
+					device.setModel(response.get("model").toString());
+					device.setSerialNumber(response.get("serialNumber").toString());
+
+					newDevice = deviceRepo.save(device);
+				}
 			}
+
 		} catch (Exception e) {
-			throw new InvalidInputException("Invalid input format: " + e.getMessage());
+			throw new InvalidInputException(e.getMessage());
 		}
 		return newDevice;
 	}
